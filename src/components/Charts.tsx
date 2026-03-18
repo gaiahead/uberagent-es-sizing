@@ -11,41 +11,103 @@ import {
   ResponsiveContainer,
   Cell,
 } from "recharts";
-import { SizingResult, SizingInputs, RetentionScenario } from "@/lib/types";
+import { ProfileResult, RetentionScenario, SizingResult } from "@/lib/types";
 import { formatNumber } from "@/lib/calculator";
 
-interface WaterfallChartProps {
-  result: SizingResult;
-  baseMB: number;
+// ---------------------------------------------------------------------------
+// Shared constants
+// ---------------------------------------------------------------------------
+
+const TIER_COLORS = {
+  hot: "#ef4444",
+  warm: "#eab308",
+  cold: "#3b82f6",
+  frozen: "#a855f7",
+} as const;
+
+const CHART_STYLE = {
+  fontFamily: "inherit",
+  fontSize: 12,
+  borderRadius: 8,
+  border: "1px solid #e5e7eb",
+  padding: "8px 12px",
+} as const;
+
+const TOOLTIP_CONTENT_STYLE = {
+  fontSize: 12,
+  borderRadius: 8,
+  border: "1px solid #e5e7eb",
+  boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
+};
+
+// ---------------------------------------------------------------------------
+// ProfileContributionChart
+// ---------------------------------------------------------------------------
+
+interface ProfileContributionChartProps {
+  profileResults: ProfileResult[];
 }
 
-export function WaterfallChart({ result, baseMB }: WaterfallChartProps) {
-  const data = [
-    { name: "기준값", value: baseMB, fill: "#6366f1" },
-    ...result.multiplierBreakdown.map((m) => ({
-      name: `${m.label} (×${m.value})`,
-      value: m.cumulative,
-      fill: m.value > 1 ? "#ef4444" : m.value < 1 ? "#22c55e" : "#94a3b8",
-    })),
+export function ProfileContributionChart({
+  profileResults,
+}: ProfileContributionChartProps) {
+  const data = profileResults.map((p) => ({
+    name: p.name,
+    dailyGB: p.dailyGB,
+  }));
+
+  // Generate a deterministic pastel color per profile index
+  const PROFILE_COLORS = [
+    "#6366f1",
+    "#0ea5e9",
+    "#10b981",
+    "#f59e0b",
+    "#ec4899",
+    "#8b5cf6",
+    "#14b8a6",
+    "#f97316",
   ];
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-4 mb-4">
-      <h3 className="text-sm font-semibold text-gray-700 mb-3">
-        승수 효과 (기준값 → 최종값)
+    <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+      <h3 className="mb-4 text-sm font-semibold text-gray-700">
+        프로파일별 일일 인입량 (GB/day)
       </h3>
-      <ResponsiveContainer width="100%" height={300}>
-        <BarChart data={data} layout="vertical" margin={{ left: 120, right: 30 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-          <XAxis type="number" tick={{ fontSize: 11 }} tickFormatter={(v) => `${v} MB`} />
-          <YAxis dataKey="name" type="category" tick={{ fontSize: 11 }} width={110} />
-          <RTooltip
-            formatter={(value) => [`${formatNumber(Number(value))} MB`, "누적값"]}
-            contentStyle={{ fontSize: 12 }}
+      <ResponsiveContainer width="100%" height={Math.max(180, data.length * 44)}>
+        <BarChart
+          data={data}
+          layout="vertical"
+          margin={{ top: 4, right: 40, bottom: 4, left: 16 }}
+        >
+          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
+          <XAxis
+            type="number"
+            tick={{ fontSize: 11, fill: "#6b7280" }}
+            tickFormatter={(v) => `${formatNumber(Number(v), 1)} GB`}
+            axisLine={false}
+            tickLine={false}
           />
-          <Bar dataKey="value" radius={[0, 4, 4, 0]}>
-            {data.map((entry, index) => (
-              <Cell key={index} fill={entry.fill} />
+          <YAxis
+            dataKey="name"
+            type="category"
+            tick={{ fontSize: 12, fill: "#374151" }}
+            width={140}
+            axisLine={false}
+            tickLine={false}
+          />
+          <RTooltip
+            contentStyle={TOOLTIP_CONTENT_STYLE}
+            formatter={(value) => [
+              `${formatNumber(Number(value), 2)} GB/day`,
+              "일일 인입량",
+            ]}
+          />
+          <Bar dataKey="dailyGB" radius={[0, 4, 4, 0]} maxBarSize={28}>
+            {data.map((_, index) => (
+              <Cell
+                key={index}
+                fill={PROFILE_COLORS[index % PROFILE_COLORS.length]}
+              />
             ))}
           </Bar>
         </BarChart>
@@ -54,82 +116,184 @@ export function WaterfallChart({ result, baseMB }: WaterfallChartProps) {
   );
 }
 
-interface StorageChartProps {
+// ---------------------------------------------------------------------------
+// StorageCompositionChart
+// ---------------------------------------------------------------------------
+
+interface StorageCompositionChartProps {
   result: SizingResult;
-  inputs: SizingInputs;
 }
 
-export function StorageChart({ result, inputs }: StorageChartProps) {
-  const hotPrimary = result.totalDailyIngestGB * inputs.hotDays;
-  const hotReplicaGB = hotPrimary * inputs.hotReplica;
-  const warmDays = Math.max(0, inputs.retentionDays - inputs.hotDays);
-  const warmPrimary = result.totalDailyIngestGB * warmDays;
-  const warmReplicaGB = warmPrimary * inputs.warmReplica;
+export function StorageCompositionChart({ result }: StorageCompositionChartProps) {
+  const hotTB = result.hotStorageGB / 1024;
+  const warmTB = result.warmStorageGB / 1024;
+  const coldTB = result.coldStorageGB / 1024;
+  const frozenTB = result.frozenStorageGB / 1024;
 
   const data = [
     {
-      name: "Hot",
-      primary: hotPrimary / 1000,
-      replica: hotReplicaGB / 1000,
-    },
-    {
-      name: "Warm",
-      primary: warmPrimary / 1000,
-      replica: warmReplicaGB / 1000,
+      name: "스토리지 구성",
+      hot: hotTB,
+      warm: warmTB,
+      cold: coldTB,
+      frozen: frozenTB,
     },
   ];
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-4 mb-4">
-      <h3 className="text-sm font-semibold text-gray-700 mb-3">
-        스토리지 구성 (TB)
+    <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+      <h3 className="mb-4 text-sm font-semibold text-gray-700">
+        티어별 스토리지 구성 (TB)
       </h3>
-      <ResponsiveContainer width="100%" height={250}>
-        <BarChart data={data} margin={{ left: 10, right: 30 }}>
+      <ResponsiveContainer width="100%" height={200}>
+        <BarChart data={data} margin={{ top: 4, right: 40, bottom: 4, left: 16 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-          <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-          <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `${v} TB`} />
-          <RTooltip
-            formatter={(value) => [`${formatNumber(Number(value))} TB`]}
-            contentStyle={{ fontSize: 12 }}
+          <XAxis
+            dataKey="name"
+            tick={{ fontSize: 12, fill: "#374151" }}
+            axisLine={false}
+            tickLine={false}
           />
-          <Legend wrapperStyle={{ fontSize: 12 }} />
-          <Bar dataKey="primary" name="Primary" stackId="a" fill="#3b82f6" radius={[0, 0, 0, 0]} />
-          <Bar dataKey="replica" name="Replica" stackId="a" fill="#93c5fd" radius={[4, 4, 0, 0]} />
+          <YAxis
+            tick={{ fontSize: 11, fill: "#6b7280" }}
+            tickFormatter={(v) => `${formatNumber(Number(v), 1)} TB`}
+            axisLine={false}
+            tickLine={false}
+          />
+          <RTooltip
+            contentStyle={TOOLTIP_CONTENT_STYLE}
+            formatter={(value, name) => {
+              const labels: Record<string, string> = {
+                hot: "Hot",
+                warm: "Warm",
+                cold: "Cold",
+                frozen: "Frozen",
+              };
+              return [
+                `${formatNumber(Number(value), 2)} TB`,
+                labels[name as string] ?? String(name),
+              ];
+            }}
+          />
+          <Legend
+            wrapperStyle={{ fontSize: 12 }}
+            formatter={(value) => {
+              const labels: Record<string, string> = {
+                hot: "Hot",
+                warm: "Warm",
+                cold: "Cold",
+                frozen: "Frozen",
+              };
+              return labels[value] ?? value;
+            }}
+          />
+          <Bar
+            dataKey="hot"
+            stackId="a"
+            fill={TIER_COLORS.hot}
+            radius={[0, 0, 0, 0]}
+            maxBarSize={80}
+          />
+          <Bar
+            dataKey="warm"
+            stackId="a"
+            fill={TIER_COLORS.warm}
+            radius={[0, 0, 0, 0]}
+            maxBarSize={80}
+          />
+          <Bar
+            dataKey="cold"
+            stackId="a"
+            fill={TIER_COLORS.cold}
+            radius={[0, 0, 0, 0]}
+            maxBarSize={80}
+          />
+          <Bar
+            dataKey="frozen"
+            stackId="a"
+            fill={TIER_COLORS.frozen}
+            radius={[4, 4, 0, 0]}
+            maxBarSize={80}
+          />
         </BarChart>
       </ResponsiveContainer>
     </div>
   );
 }
 
-interface RetentionChartProps {
+// ---------------------------------------------------------------------------
+// RetentionComparisonChart
+// ---------------------------------------------------------------------------
+
+interface RetentionComparisonChartProps {
   scenarios: RetentionScenario[];
 }
 
-export function RetentionChart({ scenarios }: RetentionChartProps) {
-  const data = scenarios.map((s) => ({
+export function RetentionComparisonChart({
+  scenarios,
+}: RetentionComparisonChartProps) {
+  const targetDays = [30, 180, 365];
+  const filtered = scenarios.filter((s) => targetDays.includes(s.days));
+
+  const data = filtered.map((s) => ({
     name: `${s.days}일`,
-    totalStorage: s.totalStorageTB,
-    diskPerNode: s.diskPerNodeTB,
+    hot: s.hotTB,
+    warm: s.warmTB,
+    cold: s.coldTB,
+    frozen: s.frozenTB,
   }));
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-4 mb-4">
-      <h3 className="text-sm font-semibold text-gray-700 mb-3">
-        보존 기간별 비교 (TB)
+    <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+      <h3 className="mb-4 text-sm font-semibold text-gray-700">
+        보존 기간별 스토리지 비교 (TB)
       </h3>
-      <ResponsiveContainer width="100%" height={250}>
-        <BarChart data={data} margin={{ left: 10, right: 30 }}>
+      <ResponsiveContainer width="100%" height={280}>
+        <BarChart data={data} margin={{ top: 4, right: 40, bottom: 4, left: 16 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-          <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-          <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `${v} TB`} />
-          <RTooltip
-            formatter={(value) => [`${formatNumber(Number(value))} TB`]}
-            contentStyle={{ fontSize: 12 }}
+          <XAxis
+            dataKey="name"
+            tick={{ fontSize: 12, fill: "#374151" }}
+            axisLine={false}
+            tickLine={false}
           />
-          <Legend wrapperStyle={{ fontSize: 12 }} />
-          <Bar dataKey="totalStorage" name="총 스토리지" fill="#6366f1" radius={[4, 4, 0, 0]} />
-          <Bar dataKey="diskPerNode" name="노드당 디스크" fill="#a78bfa" radius={[4, 4, 0, 0]} />
+          <YAxis
+            tick={{ fontSize: 11, fill: "#6b7280" }}
+            tickFormatter={(v) => `${formatNumber(Number(v), 1)} TB`}
+            axisLine={false}
+            tickLine={false}
+          />
+          <RTooltip
+            contentStyle={TOOLTIP_CONTENT_STYLE}
+            formatter={(value, name) => {
+              const labels: Record<string, string> = {
+                hot: "Hot",
+                warm: "Warm",
+                cold: "Cold",
+                frozen: "Frozen",
+              };
+              return [
+                `${formatNumber(Number(value), 2)} TB`,
+                labels[name as string] ?? String(name),
+              ];
+            }}
+          />
+          <Legend
+            wrapperStyle={{ fontSize: 12 }}
+            formatter={(value) => {
+              const labels: Record<string, string> = {
+                hot: "Hot",
+                warm: "Warm",
+                cold: "Cold",
+                frozen: "Frozen",
+              };
+              return labels[value] ?? value;
+            }}
+          />
+          <Bar dataKey="hot" name="hot" fill={TIER_COLORS.hot} radius={[0, 0, 0, 0]} maxBarSize={40} />
+          <Bar dataKey="warm" name="warm" fill={TIER_COLORS.warm} radius={[0, 0, 0, 0]} maxBarSize={40} />
+          <Bar dataKey="cold" name="cold" fill={TIER_COLORS.cold} radius={[0, 0, 0, 0]} maxBarSize={40} />
+          <Bar dataKey="frozen" name="frozen" fill={TIER_COLORS.frozen} radius={[4, 4, 0, 0]} maxBarSize={40} />
         </BarChart>
       </ResponsiveContainer>
     </div>

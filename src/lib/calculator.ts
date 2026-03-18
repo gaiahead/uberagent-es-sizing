@@ -1,178 +1,220 @@
 import {
-  SizingInputs,
+  EndpointProfile,
+  StorageConfig,
+  NodeGroup,
+  ProfileResult,
+  TierStorage,
   SizingResult,
-  MultiplierBreakdown,
   RetentionScenario,
 } from "./types";
 
-const BASE_SINGLE_USER_MB = 25;
-const BASE_MULTI_USER_MB = 90;
+// ── Constants ──
+
+const BASE_SINGLE = 25; // MB/day
+const BASE_MULTI = 90;  // MB/day
+const OVERHEAD = 1.10;  // ES overhead 10%
+
+const M_OS = { windows: 1.0, macos: 0.8, linux: 0.6 } as const;
 
 const MULTIPLIERS = {
-  module: { uxm: 1.0, "uxm-esa": 2.0 },
-  collectionInterval: { "30s": 1.0, "60s": 0.55, "120s": 0.3 },
+  module: { uxm: 1.0, "uxm+esa": 2.0 },
+  interval: { "30s": 1.0, "60s": 0.55, "120s": 0.30 },
   processDetail: { full: 1.0, top10: 0.5, top5: 0.35 },
-  browserExtension: { off: 1.0, on: 1.1 },
-  dnsMonitoring: { off: 1.0, on: 1.15 },
-  eventLogForwarding: { none: 1.0, minimal: 1.1, full: 1.3 },
-  citrixIntegration: { off: 1.0, on: 1.1 },
-  activeHours: { "8h": 1.0, "12h": 1.5, "24h": 2.8 },
-  os: { windows: 1.0, macos: 0.8, linux: 0.6 },
+  browser: { false: 1.0, true: 1.1 },
+  dns: { false: 1.0, true: 1.15 },
+  eventLog: { none: 1.0, minimal: 1.1, full: 1.3 },
+  citrix: { false: 1.0, true: 1.1 },
+  hours: { "8h": 1.0, "12h": 1.5, "24h": 2.8 },
 } as const;
 
-const MULTIPLIER_LABELS: Record<string, string> = {
-  module: "모듈",
-  collectionInterval: "수집 주기",
-  processDetail: "프로세스 상세",
-  browserExtension: "브라우저 확장",
-  dnsMonitoring: "DNS 모니터링",
-  eventLogForwarding: "이벤트 로그 전달",
-  citrixIntegration: "Citrix 통합",
-  activeHours: "활성 시간",
-  os: "운영체제",
-};
+// ── Profile Calculation ──
 
-export function calculateSizing(inputs: SizingInputs): SizingResult {
-  const baseMB =
-    inputs.environmentType === "single-user"
-      ? BASE_SINGLE_USER_MB
-      : BASE_MULTI_USER_MB;
+export function calcGroupDaily(profile: EndpointProfile): number {
+  const base = profile.environmentType === "single" ? BASE_SINGLE : BASE_MULTI;
+  const common =
+    base *
+    MULTIPLIERS.module[profile.module] *
+    MULTIPLIERS.interval[profile.collectionInterval] *
+    MULTIPLIERS.processDetail[profile.processDetail] *
+    MULTIPLIERS.browser[String(profile.browserExtension) as "true" | "false"] *
+    (profile.module === "uxm+esa"
+      ? MULTIPLIERS.dns[String(profile.dnsMonitoring) as "true" | "false"]
+      : 1.0) *
+    (profile.module === "uxm+esa"
+      ? MULTIPLIERS.eventLog[profile.eventLogForwarding]
+      : 1.0) *
+    MULTIPLIERS.citrix[String(profile.citrixIntegration) as "true" | "false"] *
+    MULTIPLIERS.hours[profile.activeHours];
 
-  const multipliers: MultiplierBreakdown[] = [];
-  let cumulative = baseMB;
+  return profile.userCount * common * M_OS[profile.os]; // MB/day
+}
 
-  const addMultiplier = (key: string, value: number) => {
-    cumulative *= value;
-    multipliers.push({
-      label: MULTIPLIER_LABELS[key] || key,
-      key,
-      value,
-      cumulative,
-    });
+// ── Tier Available Disk ──
+
+function availableDiskTB(
+  nodeGroups: NodeGroup[],
+  role: "data_hot" | "data_warm" | "data_cold" | "data_frozen"
+): number {
+  return nodeGroups
+    .filter((g) => g.roles.includes(role))
+    .reduce((sum, g) => sum + g.count * g.diskTB, 0);
+}
+
+function tierStatus(requiredGB: number, availTB: number): TierStorage {
+  const requiredTB = requiredGB / 1024;
+  const noNodes = availTB === 0;
+  const utilization = noNodes ? (requiredTB > 0 ? Infinity : 0) : requiredTB / availTB;
+  let status: "ok" | "warn" | "danger";
+  if (noNodes && requiredTB > 0) status = "danger";
+  else if (utilization > 1.0) status = "danger";
+  else if (utilization > 0.75) status = "warn";
+  else status = "ok";
+  return { requiredGB, requiredTB, availableTB: availTB, utilization, status, noNodes };
+}
+
+// ── Main Calculation ──
+
+export function calculateSizing(
+  profiles: EndpointProfile[],
+  storage: StorageConfig,
+  nodeGroups: NodeGroup[]
+): SizingResult {
+  // Profile results
+  const profileResults: ProfileResult[] = profiles.map((p) => {
+    const dailyMB = calcGroupDaily(p);
+    return { id: p.id, name: p.name, dailyMB, dailyGB: dailyMB / 1024 };
+  });
+
+  const totalDailyMB = profileResults.reduce((s, r) => s + r.dailyMB, 0);
+  const totalDailyGB = totalDailyMB / 1024;
+
+  // Frozen days
+  const frozenDays = storage.retentionDays - storage.hot.days - storage.warm.days - storage.cold.days;
+  const safeFrozenDays = Math.max(0, frozenDays);
+
+  // Storage per tier
+  const hotStorageGB = totalDailyGB * storage.hot.days * (1 + storage.hot.replica);
+  const warmStorageGB = totalDailyGB * storage.warm.days * (1 + storage.warm.replica);
+  const coldStorageGB = totalDailyGB * storage.cold.days * (1 + storage.cold.replica);
+  const frozenStorageGB = totalDailyGB * safeFrozenDays * (1 + storage.frozen.replica);
+
+  const totalStorageTB =
+    (hotStorageGB + warmStorageGB + coldStorageGB + frozenStorageGB) * OVERHEAD / 1024;
+
+  const requiredObjStorageTB = (totalDailyGB * safeFrozenDays) / 1024;
+
+  // Tier capacity status
+  const hotAvail = availableDiskTB(nodeGroups, "data_hot");
+  const warmAvail = availableDiskTB(nodeGroups, "data_warm");
+  const coldAvail = availableDiskTB(nodeGroups, "data_cold");
+  const frozenAvail = availableDiskTB(nodeGroups, "data_frozen");
+
+  const tierStatusResult = {
+    hot: tierStatus(hotStorageGB * OVERHEAD, hotAvail),
+    warm: tierStatus(warmStorageGB * OVERHEAD, warmAvail),
+    cold: tierStatus(coldStorageGB * OVERHEAD, coldAvail),
+    frozen: tierStatus(frozenStorageGB * OVERHEAD, frozenAvail),
   };
 
-  addMultiplier("module", MULTIPLIERS.module[inputs.module]);
-  addMultiplier(
-    "collectionInterval",
-    MULTIPLIERS.collectionInterval[inputs.collectionInterval]
-  );
-  addMultiplier("processDetail", MULTIPLIERS.processDetail[inputs.processDetail]);
-  addMultiplier(
-    "browserExtension",
-    inputs.browserExtension ? MULTIPLIERS.browserExtension.on : MULTIPLIERS.browserExtension.off
-  );
-  addMultiplier(
-    "dnsMonitoring",
-    inputs.module === "uxm-esa" && inputs.dnsMonitoring
-      ? MULTIPLIERS.dnsMonitoring.on
-      : MULTIPLIERS.dnsMonitoring.off
-  );
-  addMultiplier(
-    "eventLogForwarding",
-    inputs.module === "uxm-esa"
-      ? MULTIPLIERS.eventLogForwarding[inputs.eventLogForwarding]
-      : MULTIPLIERS.eventLogForwarding.none
-  );
-  addMultiplier(
-    "citrixIntegration",
-    inputs.citrixIntegration ? MULTIPLIERS.citrixIntegration.on : MULTIPLIERS.citrixIntegration.off
-  );
-  addMultiplier("activeHours", MULTIPLIERS.activeHours[inputs.activeHours]);
-  addMultiplier("os", MULTIPLIERS.os[inputs.os]);
-
-  const perUserDailyMB = cumulative;
-  const totalDailyIngestGB = (perUserDailyMB * inputs.userCount) / 1000;
-
-  const warmDays = Math.max(0, inputs.retentionDays - inputs.hotDays);
-  const hotStorageGB = totalDailyIngestGB * inputs.hotDays * (1 + inputs.hotReplica);
-  const warmStorageGB = totalDailyIngestGB * warmDays * (1 + inputs.warmReplica);
-  const totalStorageTB = ((hotStorageGB + warmStorageGB) * 1.1) / 1000;
-  const diskPerNodeTB = totalStorageTB / inputs.dataNodes;
-
-  const dailyWritePerNodeGB =
-    (totalDailyIngestGB * (1 + inputs.hotReplica)) / inputs.dataNodes;
-
-  const estimatedShardCount =
-    inputs.retentionDays * 2 * (1 + inputs.hotReplica);
-
-  let indexStrategy: string;
-  if (inputs.retentionDays < 30) {
-    indexStrategy = "일별 인덱스 (daily)";
-  } else if (inputs.retentionDays <= 90) {
-    indexStrategy = "주별 인덱스 (weekly)";
-  } else {
-    indexStrategy = "주별 인덱스 + Shrink API 권장";
-  }
+  // Retention scenarios
+  const retentionScenarios = calcRetentionScenarios(totalDailyGB, storage);
 
   return {
-    perUserDailyMB,
-    totalDailyIngestGB,
+    profileResults,
+    totalDailyMB,
+    totalDailyGB,
     hotStorageGB,
     warmStorageGB,
+    coldStorageGB,
+    frozenStorageGB,
     totalStorageTB,
-    diskPerNodeTB,
-    dailyWritePerNodeGB,
-    estimatedShardCount,
-    indexStrategy,
-    multiplierBreakdown: multipliers,
+    requiredObjStorageTB,
+    frozenDays,
+    tierStatus: tierStatusResult,
+    retentionScenarios,
   };
 }
 
-export function calculateRetentionScenarios(
-  inputs: SizingInputs
+// ── Retention Scenarios ──
+
+function calcRetentionScenarios(
+  totalDailyGB: number,
+  storage: StorageConfig
 ): RetentionScenario[] {
-  return [30, 60, 90].map((days) => {
-    const result = calculateSizing({ ...inputs, retentionDays: days });
+  return [30, 180, 365].map((days) => {
+    // Scale each tier proportionally
+    const ratio = days / Math.max(1, storage.retentionDays);
+    const hotDays = Math.min(days, Math.round(storage.hot.days * ratio));
+    const warmDays = Math.min(days - hotDays, Math.round(storage.warm.days * ratio));
+    const coldDays = Math.min(days - hotDays - warmDays, Math.round(storage.cold.days * ratio));
+    const frozenDays = Math.max(0, days - hotDays - warmDays - coldDays);
+
+    const hotGB = totalDailyGB * hotDays * (1 + storage.hot.replica);
+    const warmGB = totalDailyGB * warmDays * (1 + storage.warm.replica);
+    const coldGB = totalDailyGB * coldDays * (1 + storage.cold.replica);
+    const frozenGB = totalDailyGB * frozenDays * (1 + storage.frozen.replica);
+
+    const totalTB = (hotGB + warmGB + coldGB + frozenGB) * OVERHEAD / 1024;
+
     return {
       days,
-      totalStorageTB: result.totalStorageTB,
-      diskPerNodeTB: result.diskPerNodeTB,
+      totalStorageTB: totalTB,
+      hotTB: (hotGB * OVERHEAD) / 1024,
+      warmTB: (warmGB * OVERHEAD) / 1024,
+      coldTB: (coldGB * OVERHEAD) / 1024,
+      frozenTB: (frozenGB * OVERHEAD) / 1024,
     };
   });
 }
 
+// ── Utilities ──
+
 export function formatNumber(num: number, decimals = 2): string {
-  if (Math.abs(num) >= 1000) {
-    return num.toLocaleString("ko-KR", {
-      minimumFractionDigits: decimals,
-      maximumFractionDigits: decimals,
-    });
-  }
-  return num.toFixed(decimals);
+  return num.toLocaleString("ko-KR", {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  });
 }
 
-export function exportAsMarkdown(inputs: SizingInputs, result: SizingResult): string {
-  const envLabel = inputs.environmentType === "single-user" ? "싱글 유저" : "멀티 유저 (CVAD/RDS)";
-  const unitLabel = inputs.environmentType === "single-user" ? "사용자" : "서버";
+export function exportAsMarkdown(
+  profiles: EndpointProfile[],
+  storage: StorageConfig,
+  nodeGroups: NodeGroup[],
+  result: SizingResult
+): string {
+  let md = `## uberAgent + Elasticsearch 사이징 결과\n\n`;
 
-  return `## uberAgent ES 사이징 결과
+  md += `### 엔드포인트 프로파일\n`;
+  md += `| 그룹명 | OS | 유형 | 유저수 | 모듈 | 일일 인입량 (GB) |\n`;
+  md += `|--------|-----|------|--------|------|------------------|\n`;
+  for (const pr of result.profileResults) {
+    const p = profiles.find((pp) => pp.id === pr.id)!;
+    const envLabel = p.environmentType === "single" ? "싱글유저" : "멀티유저";
+    md += `| ${p.name} | ${p.os} | ${envLabel} | ${p.userCount.toLocaleString()} | ${p.module} | ${formatNumber(pr.dailyGB)} |\n`;
+  }
 
-### 입력 파라미터
-| 항목 | 값 |
-|------|-----|
-| ${unitLabel} 수 | ${inputs.userCount.toLocaleString()} |
-| 환경 유형 | ${envLabel} |
-| 운영체제 | ${inputs.os} |
-| 모듈 | ${inputs.module === "uxm" ? "UXM only" : "UXM + ESA"} |
-| 수집 주기 | ${inputs.collectionInterval} |
-| 프로세스 상세 | ${inputs.processDetail} |
-| 브라우저 확장 | ${inputs.browserExtension ? "ON" : "OFF"} |
-| DNS 모니터링 | ${inputs.dnsMonitoring ? "ON" : "OFF"} |
-| 이벤트 로그 전달 | ${inputs.eventLogForwarding} |
-| Citrix 통합 | ${inputs.citrixIntegration ? "ON" : "OFF"} |
-| 활성 시간 | ${inputs.activeHours} |
+  md += `\n### ILM 저장소\n`;
+  md += `| 티어 | 기간(일) | Replica |\n`;
+  md += `|------|----------|---------|\n`;
+  md += `| Hot | ${storage.hot.days} | ${storage.hot.replica} |\n`;
+  md += `| Warm | ${storage.warm.days} | ${storage.warm.replica} |\n`;
+  md += `| Cold | ${storage.cold.days} | ${storage.cold.replica} |\n`;
+  md += `| Frozen | ${Math.max(0, result.frozenDays)} | ${storage.frozen.replica} |\n`;
 
-### 결과 요약
-| 지표 | 값 |
-|------|-----|
-| ${unitLabel}당 일일 로그 | ${formatNumber(result.perUserDailyMB)} MB |
-| 총 일일 수집량 | ${formatNumber(result.totalDailyIngestGB)} GB |
-| Hot 스토리지 | ${formatNumber(result.hotStorageGB)} GB |
-| Warm 스토리지 | ${formatNumber(result.warmStorageGB)} GB |
-| 총 스토리지 | ${formatNumber(result.totalStorageTB)} TB |
-| 노드당 디스크 | ${formatNumber(result.diskPerNodeTB)} TB |
-| 노드당 일일 쓰기 | ${formatNumber(result.dailyWritePerNodeGB)} GB |
-| 예상 샤드 수 | ${result.estimatedShardCount} |
-| 인덱스 전략 | ${result.indexStrategy} |
-`;
+  md += `\n### 핵심 지표\n`;
+  md += `| 지표 | 값 |\n`;
+  md += `|------|-----|\n`;
+  md += `| 총 일일 인입량 (Primary) | ${formatNumber(result.totalDailyGB)} GB |\n`;
+  md += `| 총 저장량 | ${formatNumber(result.totalStorageTB)} TB |\n`;
+  md += `| Hot 저장량 | ${formatNumber(result.hotStorageGB / 1024)} TB |\n`;
+  md += `| 오브젝트 스토리지 필요량 | ${formatNumber(result.requiredObjStorageTB)} TB |\n`;
+
+  md += `\n### 노드 구성\n`;
+  md += `| 그룹명 | 역할 | 수량 | vCPU | RAM(GB) | Disk(TB) | 유형 |\n`;
+  md += `|--------|------|------|------|---------|----------|------|\n`;
+  for (const ng of nodeGroups) {
+    md += `| ${ng.name} | ${ng.roles.join(", ")} | ${ng.count} | ${ng.vcpu * ng.count} | ${ng.ramGB * ng.count} | ${formatNumber(ng.diskTB * ng.count)} | ${ng.storageType.toUpperCase()} |\n`;
+  }
+
+  return md;
 }

@@ -1,37 +1,48 @@
 "use client";
 
-import { SizingInputs, SizingResult, RetentionScenario } from "@/lib/types";
-import { exportAsMarkdown } from "@/lib/calculator";
-import MetricCards from "./MetricCards";
-import { WaterfallChart, StorageChart, RetentionChart } from "./Charts";
-import { NodeSizingTable, RetentionTable } from "./Tables";
 import { useState } from "react";
+import {
+  EndpointProfile,
+  StorageConfig,
+  NodeGroup,
+  SizingResult,
+} from "@/lib/types";
+import { exportAsMarkdown } from "@/lib/calculator";
+import { MetricCards } from "./MetricCards";
+import {
+  ProfileContributionChart,
+  StorageCompositionChart,
+  RetentionComparisonChart,
+} from "./Charts";
+import { TierCapacityCards } from "./TierCapacityCards";
+import { NodeConfigTable, RetentionComparisonTable } from "./NodeSummaryTable";
 
-interface ResultsDashboardProps {
-  inputs: SizingInputs;
+interface Props {
+  profiles: EndpointProfile[];
+  storage: StorageConfig;
+  nodeGroups: NodeGroup[];
   result: SizingResult;
-  retentionScenarios: RetentionScenario[];
 }
 
 export default function ResultsDashboard({
-  inputs,
+  profiles,
+  storage,
+  nodeGroups,
   result,
-  retentionScenarios,
-}: ResultsDashboardProps) {
+}: Props) {
   const [copied, setCopied] = useState(false);
-  const unitLabel = inputs.environmentType === "single-user" ? "사용자" : "서버";
-  const baseMB = inputs.environmentType === "single-user" ? 25 : 90;
 
   const handleCopy = async () => {
-    const md = exportAsMarkdown(inputs, result);
+    const md = exportAsMarkdown(profiles, storage, nodeGroups, result);
     await navigator.clipboard.writeText(md);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-4">
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
         <h2 className="text-lg font-bold text-gray-900">결과 대시보드</h2>
         <button
           onClick={handleCopy}
@@ -41,14 +52,33 @@ export default function ResultsDashboard({
         </button>
       </div>
 
-      <MetricCards result={result} unitLabel={unitLabel} />
+      {/* Metric Cards */}
+      <MetricCards result={result} />
 
-      <WaterfallChart result={result} baseMB={baseMB} />
-      <StorageChart result={result} inputs={inputs} />
-      <RetentionChart scenarios={retentionScenarios} />
+      {/* Profile Contribution Chart */}
+      {result.profileResults.length > 0 && (
+        <ProfileContributionChart profileResults={result.profileResults} />
+      )}
 
-      <NodeSizingTable result={result} />
-      <RetentionTable scenarios={retentionScenarios} dataNodes={inputs.dataNodes} />
+      {/* Storage Composition Chart */}
+      <StorageCompositionChart result={result} />
+
+      {/* Tier Capacity Cards */}
+      <div>
+        <h3 className="text-sm font-semibold text-gray-700 mb-3">
+          티어별 용량 적합성
+        </h3>
+        <TierCapacityCards result={result} />
+      </div>
+
+      {/* Retention Comparison Chart */}
+      <RetentionComparisonChart scenarios={result.retentionScenarios} />
+
+      {/* Retention Comparison Table */}
+      <RetentionComparisonTable scenarios={result.retentionScenarios} />
+
+      {/* Node Configuration Summary */}
+      <NodeConfigTable nodeGroups={nodeGroups} />
     </div>
   );
 }
