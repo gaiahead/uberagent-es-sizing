@@ -9,6 +9,7 @@ import {
   ROLE_DEFAULTS,
 } from "@/lib/types";
 import Tooltip from "@/components/Tooltip";
+import NumberInput from "@/components/NumberInput";
 
 interface Props {
   group: NodeGroup;
@@ -266,13 +267,9 @@ export default function NodeGroupCard({
                 </label>
                 <Tooltip text={FIELD_TOOLTIPS.count} />
               </div>
-              <input
-                type="number"
-                min={1}
+              <NumberInput
                 value={group.count}
-                onChange={(e) =>
-                  update({ count: Math.max(1, parseInt(e.target.value) || 1) })
-                }
+                onChange={(v) => update({ count: v })}
                 className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
               />
             </div>
@@ -285,15 +282,9 @@ export default function NodeGroupCard({
                 </label>
                 <Tooltip text={FIELD_TOOLTIPS.vcpu} />
               </div>
-              <input
-                type="number"
-                min={1}
+              <NumberInput
                 value={group.vcpu}
-                onChange={(e) =>
-                  handleSpecChange({
-                    vcpu: Math.max(1, parseInt(e.target.value) || 1),
-                  })
-                }
+                onChange={(v) => handleSpecChange({ vcpu: v })}
                 className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
               />
             </div>
@@ -306,15 +297,9 @@ export default function NodeGroupCard({
                 </label>
                 <Tooltip text={FIELD_TOOLTIPS.ramGB} />
               </div>
-              <input
-                type="number"
-                min={1}
+              <NumberInput
                 value={group.ramGB}
-                onChange={(e) =>
-                  handleSpecChange({
-                    ramGB: Math.max(1, parseInt(e.target.value) || 1),
-                  })
-                }
+                onChange={(v) => handleSpecChange({ ramGB: v })}
                 className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
               />
             </div>
@@ -327,19 +312,10 @@ export default function NodeGroupCard({
                 </label>
                 <Tooltip text={FIELD_TOOLTIPS.diskTB} />
               </div>
-              <input
-                type="number"
-                min={0.1}
-                step={0.1}
+              <NumberInput
                 value={group.diskTB}
-                onChange={(e) =>
-                  handleSpecChange({
-                    diskTB: Math.max(
-                      0.1,
-                      parseFloat(e.target.value) || 0.1
-                    ),
-                  })
-                }
+                onChange={(v) => handleSpecChange({ diskTB: v })}
+                step={0.1}
                 className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
               />
             </div>

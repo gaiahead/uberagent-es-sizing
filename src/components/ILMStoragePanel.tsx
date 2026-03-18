@@ -2,6 +2,7 @@
 
 import { StorageConfig, TierConfig } from "@/lib/types";
 import Tooltip from "@/components/Tooltip";
+import NumberInput from "@/components/NumberInput";
 
 interface Props {
   storage: StorageConfig;
@@ -97,11 +98,9 @@ export default function ILMStoragePanel({ storage, onChange }: Props) {
           <label className="text-xs font-medium text-gray-700">총 보존 기간 (일)</label>
           <Tooltip text="데이터를 보존할 전체 기간(일)입니다. 각 티어의 합산 기간이 이 값을 초과하지 않아야 합니다." />
         </div>
-        <input
-          type="number"
-          min={1}
+        <NumberInput
           value={storage.retentionDays}
-          onChange={(e) => handleRetentionChange(Math.max(1, Number(e.target.value)))}
+          onChange={handleRetentionChange}
           className="w-full rounded border border-gray-300 bg-white px-2 py-1.5 text-sm text-gray-800 focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-400"
         />
       </div>
@@ -149,15 +148,10 @@ export default function ILMStoragePanel({ storage, onChange }: Props) {
                   )}
                 </div>
               ) : (
-                <input
-                  type="number"
-                  min={0}
+                <NumberInput
                   value={tierData.days}
-                  onChange={(e) =>
-                    handleTierDays(
-                      tier.key as Exclude<TierKey, "frozen">,
-                      Math.max(0, Number(e.target.value))
-                    )
+                  onChange={(v) =>
+                    handleTierDays(tier.key as Exclude<TierKey, "frozen">, v)
                   }
                   className="h-7 w-full rounded border border-gray-300 bg-white px-2 text-center text-xs text-gray-800 focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-400"
                 />
@@ -198,12 +192,10 @@ export default function ILMStoragePanel({ storage, onChange }: Props) {
           <label className="text-xs font-medium text-gray-700">오브젝트 스토리지 (TB)</label>
           <Tooltip text="프로즌 티어에서 사용할 오브젝트 스토리지 용량(TB)입니다. S3 또는 호환 스토리지를 사용합니다." />
         </div>
-        <input
-          type="number"
-          min={0}
-          step={0.1}
+        <NumberInput
           value={storage.objectStorageTB}
-          onChange={(e) => handleObjectStorage(Math.max(0, Number(e.target.value)))}
+          onChange={handleObjectStorage}
+          step={0.1}
           className="w-full rounded border border-gray-300 bg-white px-2 py-1.5 text-sm text-gray-800 focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-400"
         />
       </div>

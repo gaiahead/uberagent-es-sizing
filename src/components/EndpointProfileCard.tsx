@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { EndpointProfile, OS, EnvironmentType, Module, CollectionInterval, ProcessDetail, EventLogForwarding, ActiveHours } from "@/lib/types";
 import Tooltip from "@/components/Tooltip";
+import NumberInput from "@/components/NumberInput";
 
 // ---------------------------------------------------------------------------
 // Sub-components
@@ -109,34 +110,6 @@ function Toggle({ checked, onChange, disabled = false, label }: ToggleProps) {
   );
 }
 
-interface NumberInputProps {
-  value: number;
-  onChange: (value: number) => void;
-  min?: number;
-  max?: number;
-  step?: number;
-}
-
-function NumberInput({ value, onChange, min = 1, max = 1000000, step = 1 }: NumberInputProps) {
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const parsed = parseInt(e.target.value, 10);
-    if (!isNaN(parsed)) {
-      onChange(Math.min(max, Math.max(min, parsed)));
-    }
-  };
-
-  return (
-    <input
-      type="number"
-      value={value}
-      min={min}
-      max={max}
-      step={step}
-      onChange={handleChange}
-      className="w-32 rounded-md border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-    />
-  );
-}
 
 // ---------------------------------------------------------------------------
 // Parameter row wrapper
@@ -349,8 +322,7 @@ export function EndpointProfileCard({ profile, onChange, onDelete, defaultExpand
             <NumberInput
               value={profile.userCount}
               onChange={(v) => update("userCount", v)}
-              min={1}
-              max={1000000}
+              className="w-32 rounded-md border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
             />
           </ParamRow>
 
