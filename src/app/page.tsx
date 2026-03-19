@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
+import Link from "next/link";
 import {
   EndpointProfile,
   StorageConfig,
@@ -15,8 +16,14 @@ import { EndpointProfileCard } from "@/components/EndpointProfileCard";
 import ILMStoragePanel from "@/components/ILMStoragePanel";
 import NodeGroupCard from "@/components/NodeGroupCard";
 import ResultsDashboard from "@/components/ResultsDashboard";
+import { useScenario } from "@/context/ScenarioContext";
 
 export default function Home() {
+  // ── Scenario ──
+  const scenario = useScenario();
+  const [savingName, setSavingName] = useState(false);
+  const [nameInput, setNameInput] = useState("");
+
   // ── State ──
   const [profiles, setProfiles] = useState<EndpointProfile[]>([
     createDefaultProfile(),
@@ -25,6 +32,32 @@ export default function Home() {
   const [nodeGroups, setNodeGroups] = useState<NodeGroup[]>([
     createDefaultNodeGroup(),
   ]);
+
+  // Pick up loaded scenario from sessionStorage (set by scenarios page)
+  useEffect(() => {
+    const raw = sessionStorage.getItem("ua-es-load-scenario");
+    if (!raw) return;
+    sessionStorage.removeItem("ua-es-load-scenario");
+    try {
+      const data = JSON.parse(raw);
+      if (data.profiles) setProfiles(data.profiles);
+      if (data.storage) setStorage(data.storage);
+      if (data.nodeGroups) setNodeGroups(data.nodeGroups);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  // Mark dirty on state change (skip initial render)
+  const initialized = useRef(false);
+  useEffect(() => {
+    if (initialized.current) {
+      scenario.markDirty();
+    } else {
+      initialized.current = true;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profiles, storage, nodeGroups]);
 
   // ── Debounce ──
   const [debouncedState, setDebouncedState] = useState({
@@ -90,6 +123,43 @@ export default function Home() {
     setNodeGroups((prev) => [...prev, createDefaultNodeGroup()]);
   }, []);
 
+  // ── Scenario handlers ──
+  const handleSave = useCallback(() => {
+    if (scenario.currentScenarioName) {
+      // Overwrite existing
+      scenario.saveScenario(
+        scenario.currentScenarioName,
+        profiles,
+        storage,
+        nodeGroups,
+        {
+          totalDailyGB: result.totalDailyGB,
+          totalStorageTB: result.totalStorageTB,
+          profileCount: profiles.length,
+        }
+      );
+    } else {
+      setSavingName(true);
+      setNameInput("");
+    }
+  }, [scenario, profiles, storage, nodeGroups, result]);
+
+  const confirmSave = useCallback(() => {
+    const name = nameInput.trim();
+    if (!name) return;
+    scenario.saveScenario(name, profiles, storage, nodeGroups, {
+      totalDailyGB: result.totalDailyGB,
+      totalStorageTB: result.totalStorageTB,
+      profileCount: profiles.length,
+    });
+    setSavingName(false);
+  }, [nameInput, scenario, profiles, storage, nodeGroups, result]);
+
+  // Expose state setters for scenario loading (called from scenarios page via context)
+  // We store the setters in a ref so ScenarioContext can call them
+  const stateSettersRef = useRef({ setProfiles, setStorage, setNodeGroups });
+  stateSettersRef.current = { setProfiles, setStorage, setNodeGroups };
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
@@ -103,9 +173,63 @@ export default function Home() {
               Citrix uberAgent + Elasticsearch 배포 용량 산정
             </p>
           </div>
-          <span className="text-xs text-gray-400 hidden sm:block">
-            v7.5.x 기준
-          </span>
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-gray-400 hidden sm:inline">
+              {scenario.currentScenarioName ? (
+                <>
+                  <span className="text-gray-700 font-medium">{scenario.currentScenarioName}</span>
+                  {scenario.isDirty && <span className="text-amber-500 ml-1">*</span>}
+                </>
+              ) : (
+                <span className="text-gray-400">저장되지 않음</span>
+              )}
+            </span>
+            {savingName ? (
+              <div className="flex items-center gap-1">
+                <input
+                  type="text"
+                  value={nameInput}
+                  onChange={(e) => setNameInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") confirmSave();
+                    if (e.key === "Escape") setSavingName(false);
+                  }}
+                  placeholder="시나리오 이름"
+                  className="px-2 py-1 text-xs border border-gray-300 rounded-md w-36 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  autoFocus
+                />
+                <button
+                  onClick={confirmSave}
+                  className="px-2 py-1 text-xs bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                >
+                  확인
+                </button>
+                <button
+                  onClick={() => setSavingName(false)}
+                  className="px-2 py-1 text-xs text-gray-500 hover:text-gray-700"
+                >
+                  취소
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={handleSave}
+                title="저장"
+                className="px-3 py-1.5 text-xs font-medium bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg transition-colors"
+              >
+                &#128190; 저장
+              </button>
+            )}
+            <Link
+              href="/scenarios"
+              className="px-3 py-1.5 text-xs font-medium bg-gray-50 hover:bg-gray-100 text-gray-700 rounded-lg transition-colors"
+            >
+              &#128194; 시나리오
+            </Link>
+            <span className="text-xs text-gray-400 hidden sm:inline">
+              v7.5.x 기준
+            </span>
+          </div>
         </div>
       </header>
 

@@ -73,7 +73,7 @@ export default function ILMStoragePanel({ storage, onChange }: Props) {
     });
   }
 
-  function handleTierReplica(key: TierKey, value: 0 | 1) {
+  function handleTierReplica(key: TierKey, value: number) {
     onChange({
       ...storage,
       [key]: { ...(storage[key] as TierConfig), replica: value },
@@ -157,25 +157,14 @@ export default function ILMStoragePanel({ storage, onChange }: Props) {
                 />
               )}
 
-              {/* Replica toggle */}
+              {/* Replica input */}
               <div className="flex items-center justify-center gap-0.5">
                 <Tooltip text={tier.replicaTooltip} />
-                <div className="flex overflow-hidden rounded border border-gray-300">
-                  {([0, 1] as const).map((val) => (
-                    <button
-                      key={val}
-                      type="button"
-                      onClick={() => handleTierReplica(tier.key, val)}
-                      className={`h-7 w-8 text-xs font-medium transition-colors ${
-                        tierData.replica === val
-                          ? "bg-blue-500 text-white"
-                          : "bg-white text-gray-600 hover:bg-gray-50"
-                      }`}
-                    >
-                      {val}
-                    </button>
-                  ))}
-                </div>
+                <NumberInput
+                  value={tierData.replica}
+                  onChange={(v) => handleTierReplica(tier.key, v)}
+                  className="h-7 w-14 rounded border border-gray-300 bg-white px-2 text-center text-xs text-gray-800 focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                />
               </div>
             </div>
           );

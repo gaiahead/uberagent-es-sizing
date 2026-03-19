@@ -28,7 +28,7 @@ export interface EndpointProfile {
 
 export interface TierConfig {
   days: number;
-  replica: 0 | 1;
+  replica: number;
 }
 
 export interface StorageConfig {
@@ -151,6 +151,24 @@ export const ALL_ROLES: NodeRole[] = [
   "kibana",
   "fleet",
 ];
+
+// ── Scenario ──
+
+export interface ScenarioSummary {
+  totalDailyGB: number;
+  totalStorageTB: number;
+  profileCount: number;
+}
+
+export interface SavedScenario {
+  id: string;
+  name: string;
+  savedAt: string; // ISO 8601
+  profiles: EndpointProfile[];
+  storage: StorageConfig;
+  nodeGroups: NodeGroup[];
+  summary: ScenarioSummary;
+}
 
 // ── Defaults ──
 
