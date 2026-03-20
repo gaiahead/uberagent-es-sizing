@@ -17,12 +17,14 @@ import ILMStoragePanel from "@/components/ILMStoragePanel";
 import NodeGroupCard from "@/components/NodeGroupCard";
 import ResultsDashboard from "@/components/ResultsDashboard";
 import { useScenario } from "@/context/ScenarioContext";
+import { encodeState, decodeState } from "@/lib/share";
 
 export default function Home() {
   // ── Scenario ──
   const scenario = useScenario();
   const [savingName, setSavingName] = useState(false);
   const [nameInput, setNameInput] = useState("");
+  const [shareLabel, setShareLabel] = useState("🔗 공유");
 
   // ── State ──
   const [profiles, setProfiles] = useState<EndpointProfile[]>([
@@ -33,8 +35,23 @@ export default function Home() {
     createDefaultNodeGroup(),
   ]);
 
-  // Pick up loaded scenario from sessionStorage (set by scenarios page)
+  // Pick up shared state from URL ?s= parameter (takes priority)
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const s = params.get("s");
+    if (s) {
+      const decoded = decodeState(s);
+      if (decoded) {
+        setProfiles(decoded.profiles);
+        setStorage(decoded.storage);
+        setNodeGroups(decoded.nodeGroups);
+      }
+      // Remove ?s= from URL
+      window.history.replaceState({}, "", window.location.pathname);
+      return;
+    }
+
+    // Otherwise pick up loaded scenario from sessionStorage (set by scenarios page)
     const raw = sessionStorage.getItem("ua-es-load-scenario");
     if (!raw) return;
     sessionStorage.removeItem("ua-es-load-scenario");
@@ -155,6 +172,19 @@ export default function Home() {
     setSavingName(false);
   }, [nameInput, scenario, profiles, storage, nodeGroups, result]);
 
+  const handleShare = useCallback(async () => {
+    const encoded = encodeState(profiles, storage, nodeGroups);
+    const url = `${window.location.origin}${window.location.pathname}?s=${encoded}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      setShareLabel("✓ 복사됨");
+      setTimeout(() => setShareLabel("🔗 공유"), 2000);
+    } catch {
+      // Fallback: prompt with URL
+      prompt("공유 URL:", url);
+    }
+  }, [profiles, storage, nodeGroups]);
+
   // Expose state setters for scenario loading (called from scenarios page via context)
   // We store the setters in a ref so ScenarioContext can call them
   const stateSettersRef = useRef({ setProfiles, setStorage, setNodeGroups });
@@ -220,6 +250,13 @@ export default function Home() {
                 &#128190; 저장
               </button>
             )}
+            <button
+              onClick={handleShare}
+              title="현재 설정을 URL로 공유"
+              className="px-3 py-1.5 text-xs font-medium bg-green-50 hover:bg-green-100 text-green-700 rounded-lg transition-colors"
+            >
+              {shareLabel}
+            </button>
             <Link
               href="/scenarios"
               className="px-3 py-1.5 text-xs font-medium bg-gray-50 hover:bg-gray-100 text-gray-700 rounded-lg transition-colors"
