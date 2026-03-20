@@ -12,7 +12,7 @@ import {
 
 const BASE_SINGLE = 25; // MB/day
 const BASE_MULTI = 90;  // MB/day
-const OVERHEAD = 1.10;  // ES overhead 10%
+const OVERHEAD = 1.20;  // ES overhead 20% (인덱싱 ~10% + 스토리지 ~10%)
 
 const M_OS = { windows: 1.0, macos: 0.8, linux: 0.6 } as const;
 
