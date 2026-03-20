@@ -10,10 +10,10 @@ import { formatNumber } from "./calculator";
 // ── NodeRole 한국어 변환 ──
 
 const ROLE_LABELS_KO: Record<NodeRole, string> = {
-  data_hot: "데이터 노드 (Hot)",
-  data_warm: "데이터 노드 (Warm)",
-  data_cold: "데이터 노드 (Cold)",
-  data_frozen: "데이터 노드 (Frozen)",
+  data_hot: "핫 노드",
+  data_warm: "웜 노드",
+  data_cold: "콜드 노드",
+  data_frozen: "프로즌 노드",
   master: "마스터 노드",
   "coord+ingest": "코디네이터/인제스트",
   ml: "ML 노드",
@@ -42,44 +42,36 @@ function roleLabel(roles: NodeRole[]): string {
 // ── 계산식 배율 표기 헬퍼 ──
 
 function buildFormulaLine(p: EndpointProfile, dailyGB: number): string[] {
-  const baseLabel = p.environmentType === "single" ? "25MB(싱글)" : "90MB(멀티)";
-  const osLabel = p.os === "windows" ? "1.0(Win)" : p.os === "macos" ? "0.8(Mac)" : "0.6(Linux)";
-  const moduleLabel = p.module === "uxm" ? "1.0(UXM)" : "2.0(ESA)";
-  const intervalLabel = p.collectionInterval === "30s" ? "1.0(30s)" : p.collectionInterval === "60s" ? "0.55(60s)" : "0.30(120s)";
-  const processLabel = p.processDetail === "full" ? "1.0(Full)" : p.processDetail === "top10" ? "0.5(Top10)" : "0.35(Top5)";
-  const hoursLabel = p.activeHours === "8h" ? "1.0(8h)" : p.activeHours === "12h" ? "1.5(12h)" : "2.8(24h)";
+  const base = p.environmentType === "single" ? 25 : 90;
+  const mOS = p.os === "windows" ? 1.0 : p.os === "macos" ? 0.8 : 0.6;
+  const mModule = p.module === "uxm" ? 1.0 : 2.0;
+  const mInterval = p.collectionInterval === "30s" ? 1.0 : p.collectionInterval === "60s" ? 0.55 : 0.30;
+  const mProcess = p.processDetail === "full" ? 1.0 : p.processDetail === "top10" ? 0.5 : 0.35;
+  const mHours = p.activeHours === "8h" ? 1.0 : p.activeHours === "12h" ? 1.5 : 2.8;
 
-  const parts = [
-    `${p.userCount.toLocaleString()}명`,
-    baseLabel,
-    `${osLabel}`,
-    `${moduleLabel}`,
-    `${intervalLabel}`,
-    `${processLabel}`,
-    `${hoursLabel}`,
-  ];
+  let effectiveMB = base * mOS * mModule * mInterval * mProcess * mHours;
 
-  // 선택 옵션: 활성화된 경우만 추가
-  if (p.browserExtension) parts.push("1.1(브라우저)");
-  if (p.citrixIntegration) parts.push("1.1(Citrix)");
-  if (p.module === "uxm+esa" && p.dnsMonitoring) parts.push("1.15(DNS)");
-  if (p.module === "uxm+esa" && p.eventLogForwarding === "minimal") parts.push("1.1(이벤트로그-최소)");
-  if (p.module === "uxm+esa" && p.eventLogForwarding === "full") parts.push("1.3(이벤트로그-전체)");
+  // 선택 옵션
+  if (p.browserExtension) effectiveMB *= 1.1;
+  if (p.citrixIntegration) effectiveMB *= 1.1;
+  if (p.module === "uxm+esa" && p.dnsMonitoring) effectiveMB *= 1.15;
+  if (p.module === "uxm+esa" && p.eventLogForwarding === "minimal") effectiveMB *= 1.1;
+  if (p.module === "uxm+esa" && p.eventLogForwarding === "full") effectiveMB *= 1.3;
 
-  const formula = `${parts[0]} × ${parts.slice(1).join(" × ")}`;
+  const rounded = Math.round(effectiveMB * 100) / 100;
 
   return [
     `  → 일일 인입량: ${formatNumber(dailyGB)} GB/day`,
-    `     = ${formula}`,
+    `     = ${p.userCount.toLocaleString()}명 × ${rounded}MB`,
   ];
 }
 
 // ── 프로세스 상세도 라벨 ──
 
 function processDetailLabel(detail: string): string {
-  if (detail === "full") return "Full";
-  if (detail === "top10") return "Top 10";
-  return "Top 5";
+  if (detail === "full") return "Process Full";
+  if (detail === "top10") return "Process Top 10";
+  return "Process Top 5";
 }
 
 export function exportAsEmail(
@@ -99,7 +91,7 @@ export function exportAsEmail(
   lines.push("[ 환경 구성 ]");
   for (const pr of result.profileResults) {
     const p = profiles.find((pp) => pp.id === pr.id)!;
-    const moduleLabel = p.module === "uxm" ? "UXM" : "UXM+ESA";
+    const moduleLabel = p.module === "uxm" ? "UXM only" : "UXM+ESA";
     const intervalLabel = p.collectionInterval;
     const hoursLabel = p.activeHours;
     const procLabel = processDetailLabel(p.processDetail);
@@ -163,7 +155,7 @@ export function exportAsEmail(
     const label = roleLabel(ng.roles);
     const storageLabel = ng.storageType.toUpperCase();
     lines.push(
-      `• ${ng.name} (${label}): ${ng.count}대 / 1대 기준: ${ng.vcpu} vCPU / ${ng.ramGB} GB RAM / ${formatNumber(ng.diskTB)} TB ${storageLabel}`
+      `• ${label}: ${ng.count}대 / 1대 기준: ${ng.vcpu} vCPU / ${ng.ramGB} GB RAM / ${formatNumber(ng.diskTB)} TB ${storageLabel}`
     );
   }
 
@@ -171,8 +163,8 @@ export function exportAsEmail(
   const hasMasterRole = nodeGroups.some((ng) => ng.roles.includes("master"));
   if (hasMasterRole) {
     lines.push("");
-    lines.push("※ 마스터 노드는 반드시 각기 다른 물리 서버에 배치해야 합니다.");
-    lines.push("   (전용 마스터 노드 또는 데이터 노드 겸임 모두 해당)");
+    lines.push("※ 마스터 역할을 하는 노드는 각기 다른 물리 서버에 배치해야 합니다.");
+    lines.push("   (같은 물리 서버에 있을 경우 가용성 확보에 제약이 있습니다.)");
   }
 
   lines.push("");
