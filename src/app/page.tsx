@@ -203,7 +203,7 @@ export default function Home() {
               Citrix uberAgent + Elasticsearch 배포 용량 산정
             </p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 print-hide">
             <span className="text-xs text-gray-400 hidden sm:inline">
               {scenario.currentScenarioName ? (
                 <>
@@ -274,7 +274,7 @@ export default function Home() {
       <main className="max-w-[1600px] mx-auto px-4 py-6">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           {/* ── Left Panel ── */}
-          <div className="lg:col-span-4 xl:col-span-4">
+          <div className="lg:col-span-4 xl:col-span-4 print-hide">
             <div className="lg:sticky lg:top-16 lg:max-h-[calc(100vh-5rem)] lg:overflow-y-auto space-y-6 pb-4">
               {/* Endpoint Profiles */}
               <div>
@@ -339,7 +339,7 @@ export default function Home() {
           </div>
 
           {/* ── Right Panel ── */}
-          <div className="lg:col-span-8 xl:col-span-8">
+          <div className="lg:col-span-8 xl:col-span-8 print-full">
             <ResultsDashboard
               profiles={debouncedState.profiles}
               storage={debouncedState.storage}

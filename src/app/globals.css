@@ -17,3 +17,22 @@ body {
   color: var(--foreground);
   font-family: var(--font-sans), Arial, Helvetica, sans-serif;
 }
+
+@media print {
+  header,
+  .print-hide {
+    display: none !important;
+  }
+  .print-full {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+  body {
+    background: white !important;
+    font-size: 12px;
+  }
+  @page {
+    margin: 15mm;
+    size: A4;
+  }
+}
