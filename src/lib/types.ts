@@ -183,7 +183,7 @@ export function createDefaultProfile(): EndpointProfile {
     name: "Windows 엔드포인트",
     os: "windows",
     environmentType: "single",
-    userCount: 100,
+    userCount: 1,
     module: "uxm",
     collectionInterval: "30s",
     processDetail: "full",
@@ -218,3 +218,4 @@ export function createDefaultNodeGroup(): NodeGroup {
     storageType: "ssd",
   };
 }
+
